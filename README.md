@@ -1,12 +1,13 @@
 # Telegram File Gateway
 
-A small Cloudflare Worker that lets trusted applications download files from the
-Telegram Bot API without exposing the bot token to the downloader.
+A small Cloudflare Worker that lets trusted applications download and send
+Telegram Bot API files without exposing the bot token to file clients.
 
 Each Worker deployment serves one Telegram bot token. A trusted application
-mints a short-lived HS256 grant containing one Telegram `file_id`; the Worker
-validates the grant and streams the file from Telegram without buffering or
-redirecting the client to Telegram's token-bearing URL.
+mints a short-lived, operation-specific HS256 grant. Download grants contain one
+Telegram `file_id`. Send grants bind the exact chat, optional Telegram topic,
+delivery mode, filename, MIME type, caption, and byte count. The Worker validates
+the grant and streams bytes in either direction without buffering the file.
 
 Telegram may redirect its own metadata and file requests. The Worker follows
 those redirects internally; it never forwards a redirect or upstream location
@@ -25,6 +26,7 @@ header to the downloader.
   "iat": 1785456000,
   "exp": 1785456300,
   "jti": "a-unique-random-value",
+  "op": "download_file",
   "telegram_file_id": "BQAC...",
   "max_bytes": 20971520
 }
@@ -32,6 +34,34 @@ header to the downloader.
 
 The grant may live for at most five minutes. `max_bytes` cannot exceed 20 MiB,
 which is also the standard Telegram Bot API download limit.
+
+`POST /v1/send` accepts an exact-length `application/octet-stream` request body
+and requires a send grant:
+
+```json
+{
+  "iss": "your-application",
+  "aud": "telegram-file-gateway",
+  "iat": 1785456000,
+  "exp": 1785456300,
+  "jti": "a-unique-random-value",
+  "op": "send_file",
+  "telegram_chat_id": "-1001234567890",
+  "telegram_message_thread_id": 42,
+  "delivery": "document",
+  "file_name": "report.pdf",
+  "mime_type": "application/pdf",
+  "caption": "Quarterly report",
+  "file_size": 482013,
+  "max_bytes": 20971520
+}
+```
+
+The request `Content-Length` must equal the signed `file_size`. The Worker
+constructs a streamed multipart request to Telegram's `sendDocument` or
+`sendPhoto` method. It returns only the message and Telegram file identifiers
+needed for durable reference tracking. The client cannot change the destination,
+topic, media method, metadata, or size without invalidating the signature.
 
 ## Local development
 
@@ -48,7 +78,7 @@ node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("b
 ```
 
 Configure the same key in the trusted grant issuer. `examples/sign-grant.ts`
-shows a dependency-free Node.js signer.
+and `examples/sign-send-grant.ts` show dependency-free Node.js signers.
 
 ## Test and build
 
@@ -102,9 +132,13 @@ either value in workflow source.
 
 ## Security model
 
-- There is no arbitrary upstream URL input.
+- There is no arbitrary upstream URL or Telegram destination input outside a
+  signed grant.
 - The Telegram bot token never appears in a response, redirect, grant, or log.
-- Grants are restricted to one file, one issuer, one audience, and five minutes.
+- Grants are restricted to one operation, one file or destination, one issuer,
+  one audience, and five minutes.
+- Upload bodies must have the exact signed length, and send metadata is never
+  accepted from query parameters or unsigned headers.
 - Responses are not cached and CORS is not enabled.
 - Rotate the HMAC key by updating the Worker secret and every trusted issuer
   together. Existing grants become invalid immediately.

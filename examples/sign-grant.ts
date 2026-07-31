@@ -14,6 +14,7 @@ const payload = encode({
   iat: now,
   exp: now + 300,
   jti: randomUUID(),
+  op: "download_file",
   telegram_file_id: telegramFileId,
   max_bytes: 20 * 1024 * 1024,
 });

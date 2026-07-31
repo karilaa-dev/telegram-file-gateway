@@ -50,6 +50,118 @@ describe("telegram file gateway", () => {
     assert.equal((calls[1]?.[1] as RequestInit | undefined)?.redirect, "follow");
   });
 
+  it("streams a granted file to the signed Telegram topic without exposing credentials", async () => {
+    const bytes = new TextEncoder().encode("sandbox fixture");
+    const calls: unknown[][] = [];
+    let multipart = "";
+    globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+      calls.push(args);
+      const init = args[1];
+      multipart = await new Response(init?.body).text();
+      return new Response(JSON.stringify({
+        ok: true,
+        result: {
+          message_id: 912,
+          document: {
+            file_id: "BQAC-sent",
+            file_unique_id: "unique-sent",
+            file_name: "report.txt",
+            mime_type: "text/plain",
+            file_size: bytes.length,
+          },
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    const token = await grant({
+      op: "send_file",
+      telegram_file_id: undefined,
+      telegram_chat_id: "-1001234567890",
+      telegram_message_thread_id: 77,
+      delivery: "document",
+      file_name: "report.txt",
+      mime_type: "text/plain",
+      caption: "A report",
+      file_size: bytes.length,
+    });
+    const response = await invoke("/v1/send", token, "POST", bytes);
+    assert.equal(response.status, 200);
+    const responseText = await response.text();
+    assert.deepEqual(JSON.parse(responseText), {
+      ok: true,
+      result: {
+        message_id: 912,
+        delivery: "document",
+        document: {
+          file_id: "BQAC-sent",
+          file_unique_id: "unique-sent",
+          file_name: "report.txt",
+          mime_type: "text/plain",
+          file_size: bytes.length,
+        },
+      },
+    });
+    assert.equal(calls.length, 1);
+    assert.match(String(calls[0]?.[0]), /\/bot123456:secret-token\/sendDocument/);
+    assert.match(multipart, /name="chat_id"\r\n\r\n-1001234567890/);
+    assert.match(multipart, /name="message_thread_id"\r\n\r\n77/);
+    assert.match(multipart, /name="document"; filename="report.txt"/);
+    assert.match(multipart, /sandbox fixture/);
+    assert.doesNotMatch(responseText, /secret-token|Bearer|eyJ/);
+  });
+
+  it("does not accept a download grant for sending", async () => {
+    const calls: unknown[][] = [];
+    globalThis.fetch = mockFetch(calls, []);
+    const response = await invoke("/v1/send", await grant(), "POST", new Uint8Array([1]));
+    assert.equal(response.status, 401);
+    assert.equal(calls.length, 0);
+  });
+
+  it("requires the upload body to match the signed size", async () => {
+    const token = await grant({
+      op: "send_file",
+      telegram_file_id: undefined,
+      telegram_chat_id: "1234",
+      telegram_message_thread_id: null,
+      delivery: "photo",
+      file_name: "photo.jpg",
+      mime_type: "image/jpeg",
+      caption: null,
+      file_size: 5,
+    });
+    const response = await invoke("/v1/send", token, "POST", new Uint8Array([1, 2]));
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { ok: false, error: { code: "invalid_file_body" } });
+  });
+
+  it("sanitizes Telegram send failures", async () => {
+    globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+      await new Response(args[1]?.body).arrayBuffer();
+      return new Response(JSON.stringify({
+        ok: false,
+        description: `token ${env.TELEGRAM_BOT_TOKEN} rejected`,
+      }), { status: 400 });
+    }) as typeof fetch;
+    const bytes = new Uint8Array([1, 2, 3]);
+    const token = await grant({
+      op: "send_file",
+      telegram_file_id: undefined,
+      telegram_chat_id: "1234",
+      telegram_message_thread_id: 7,
+      delivery: "photo",
+      file_name: "photo.jpg",
+      mime_type: "image/jpeg",
+      caption: null,
+      file_size: bytes.length,
+    });
+    const response = await invoke("/v1/send", token, "POST", bytes);
+    const text = await response.text();
+    assert.equal(response.status, 502);
+    assert.equal(text, '{"ok":false,"error":{"code":"telegram_rejected_file"}}');
+    assert.doesNotMatch(text, /secret-token|Bearer|eyJ/);
+  });
+
   for (
     const kind of [
       "missing",
@@ -148,6 +260,7 @@ describe("telegram file gateway", () => {
 
   it("does not accept arbitrary routes or methods", async () => {
     assert.equal((await invoke("/v1/file", undefined, "POST")).status, 405);
+    assert.equal((await invoke("/v1/send", undefined, "GET")).status, 405);
     assert.equal((await invoke("/v1/file/https://example.com")).status, 404);
   });
 });
@@ -161,9 +274,22 @@ function mockFetch(calls: unknown[][], responses: Response[]): typeof fetch {
   }) as typeof fetch;
 }
 
-async function invoke(path: string, token?: string, method = "GET"): Promise<Response> {
+async function invoke(
+  path: string,
+  token?: string,
+  method = "GET",
+  body?: Uint8Array,
+): Promise<Response> {
   const init: RequestInit = { method };
   if (token) init.headers = { authorization: `Bearer ${token}` };
+  if (body) {
+    init.body = body as unknown as BodyInit;
+    init.headers = {
+      ...init.headers,
+      "content-length": String(body.byteLength),
+      "content-type": "application/octet-stream",
+    };
+  }
   return handleRequest(new Request(`https://gateway.test${path}`, init), env);
 }
 
@@ -179,6 +305,7 @@ async function grant(
     iat: now,
     exp: now + 300,
     jti: "12345678-1234-1234-1234-123456789abc",
+    op: "download_file",
     telegram_file_id: "BQAC-test-file",
     max_bytes: 20 * 1024 * 1024,
     ...overrides,
