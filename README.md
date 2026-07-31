@@ -51,10 +51,12 @@ shows a dependency-free Node.js signer.
 ```sh
 npm run typecheck
 npm test
+npm run test:workers
 npm run build
 ```
 
-Tests run inside Cloudflare's Workers Vitest integration.
+The fast protocol suite runs in Node with mocked Telegram responses, and the
+Worker smoke suite runs in Cloudflare's Vitest pool.
 
 ## Deploy
 
