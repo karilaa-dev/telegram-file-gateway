@@ -8,6 +8,10 @@ mints a short-lived HS256 grant containing one Telegram `file_id`; the Worker
 validates the grant and streams the file from Telegram without buffering or
 redirecting the client to Telegram's token-bearing URL.
 
+Telegram may redirect its own metadata and file requests. The Worker follows
+those redirects internally; it never forwards a redirect or upstream location
+header to the downloader.
+
 ## API
 
 `GET /healthz` returns service health.
@@ -57,6 +61,13 @@ npm run build
 
 The fast protocol suite runs in Node with mocked Telegram responses, and the
 Worker smoke suite runs in Cloudflare's Vitest pool.
+
+After changing bindings or compatibility flags, regenerate the checked-in
+runtime and binding declarations:
+
+```sh
+npm run types
+```
 
 ## Deploy
 

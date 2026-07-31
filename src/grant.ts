@@ -13,11 +13,6 @@ export interface TelegramFileGrantV1 {
 
 export type VerifiedGrant = TelegramFileGrantV1;
 
-type JwtHeader = {
-  alg: "HS256";
-  typ: "JWT";
-};
-
 export async function verifyFileGrant(
   token: string,
   input: {
@@ -33,7 +28,7 @@ export async function verifyFileGrant(
   const [encodedHeader, encodedPayload, encodedSignature] = parts;
   if (!encodedHeader || !encodedPayload || !encodedSignature) throw new Error("invalid grant");
 
-  const header = parseJson<JwtHeader>(decodeBase64Url(encodedHeader));
+  const header = parseJson(decodeBase64Url(encodedHeader));
   if (header.alg !== "HS256" || header.typ !== "JWT") throw new Error("invalid grant");
 
   const keyBytes = decodeConfiguredKey(input.key);
@@ -52,7 +47,7 @@ export async function verifyFileGrant(
   );
   if (!valid) throw new Error("invalid grant");
 
-  const grant = parseJson<Record<string, unknown>>(decodeBase64Url(encodedPayload));
+  const grant = parseJson(decodeBase64Url(encodedPayload));
   const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
   if (
     grant.iss !== input.issuer
@@ -75,7 +70,15 @@ export async function verifyFileGrant(
   ) {
     throw new Error("invalid grant");
   }
-  return grant as unknown as TelegramFileGrantV1;
+  return {
+    iss: grant.iss,
+    aud: grant.aud,
+    iat: grant.iat,
+    exp: grant.exp,
+    jti: grant.jti,
+    telegram_file_id: grant.telegram_file_id,
+    max_bytes: grant.max_bytes,
+  };
 }
 
 function decodeConfiguredKey(value: string): Uint8Array<ArrayBuffer> {
@@ -97,12 +100,12 @@ function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-function parseJson<T>(bytes: Uint8Array): T {
+function parseJson(bytes: Uint8Array): Record<string, unknown> {
   if (bytes.byteLength > 2048) throw new Error("invalid grant");
   try {
     const parsed = JSON.parse(new TextDecoder().decode(bytes));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid");
-    return parsed as T;
+    return Object.fromEntries(Object.entries(parsed));
   } catch {
     throw new Error("invalid grant");
   }

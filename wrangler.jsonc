@@ -3,9 +3,16 @@
   "name": "telegram-file-gateway",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-31",
+  "compatibility_flags": [
+    "global_fetch_strictly_public",
+    "nodejs_compat"
+  ],
   "workers_dev": true,
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "logs": {
+      "head_sampling_rate": 1
+    }
   },
   "vars": {
     "FILE_GRANT_ISSUER": "your-application",

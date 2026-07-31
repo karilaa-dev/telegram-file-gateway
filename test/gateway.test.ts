@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import worker, { type Env } from "../src/index";
+import { handleRequest } from "../src/index";
 
 const secret = "A".repeat(43);
 const env: Env = {
   TELEGRAM_BOT_TOKEN: "123456:secret-token",
   FILE_GRANT_HMAC_KEY: secret,
-  FILE_GRANT_ISSUER: "test-client",
+  FILE_GRANT_ISSUER: "your-application",
   FILE_GRANT_AUDIENCE: "telegram-file-gateway",
 };
 const originalFetch = globalThis.fetch;
@@ -46,6 +46,8 @@ describe("telegram file gateway", () => {
     assert.equal(calls.length, 2);
     assert.match(String(calls[0]?.[0]), /\/bot123456:secret-token\/getFile/);
     assert.match(String(calls[1]?.[0]), /\/file\/bot123456:secret-token\/documents\/file_42\.bin/);
+    assert.equal((calls[0]?.[1] as RequestInit | undefined)?.redirect, "follow");
+    assert.equal((calls[1]?.[1] as RequestInit | undefined)?.redirect, "follow");
   });
 
   for (
@@ -162,10 +164,7 @@ function mockFetch(calls: unknown[][], responses: Response[]): typeof fetch {
 async function invoke(path: string, token?: string, method = "GET"): Promise<Response> {
   const init: RequestInit = { method };
   if (token) init.headers = { authorization: `Bearer ${token}` };
-  const request = (
-    new Request(`https://gateway.test${path}`, init)
-  ) as unknown as Request<unknown, IncomingRequestCfProperties>;
-  return worker.fetch(request, env);
+  return handleRequest(new Request(`https://gateway.test${path}`, init), env);
 }
 
 async function grant(
