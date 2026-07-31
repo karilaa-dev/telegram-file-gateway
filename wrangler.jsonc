@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "telegram-file-gateway",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-31",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "FILE_GRANT_ISSUER": "your-application",
+    "FILE_GRANT_AUDIENCE": "telegram-file-gateway"
+  },
+  "secrets": {
+    "required": [
+      "TELEGRAM_BOT_TOKEN",
+      "FILE_GRANT_HMAC_KEY"
+    ]
+  }
+}

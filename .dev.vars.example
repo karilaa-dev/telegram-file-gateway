@@ -1,0 +1,2 @@
+TELEGRAM_BOT_TOKEN=123456:replace-me
+FILE_GRANT_HMAC_KEY=replace-with-base64url-encoded-32-byte-key
