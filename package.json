@@ -21,7 +21,7 @@
     "tsx": "^4.23.1",
     "typescript": "7.0.2",
     "unenv": "^2.0.0-rc.24",
-    "vitest": "4.1.10",
+    "vitest": "4.1.12",
     "wrangler": "4.116.0"
   },
   "allowScripts": {
